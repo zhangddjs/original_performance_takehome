@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tree Traversal Kernel Visualization</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 { color: #333; margin-top: 0; }
+        h2 { color: #555; font-size: 1.2em; }
+        .tree-container {
+            text-align: center;
+            padding: 20px;
+            overflow-x: auto;
+        }
+        .node {
+            display: inline-block;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: #4CAF50;
+            color: white;
+            line-height: 60px;
+            text-align: center;
+            margin: 10px;
+            font-weight: bold;
+            position: relative;
+        }
+        .node-indicators {
+            position: absolute;
+            bottom: -25px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 3px;
+            flex-wrap: wrap;
+            justify-content: center;
+            max-width: 80px;
+        }
+        .node-indicator {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            border: 2px solid white;
+            font-size: 9px;
+            line-height: 12px;
+            text-align: center;
+            color: white;
+            font-weight: bold;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.2); }
+        }
+        .level {
+            margin: 35px 0;
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+        }
+        .batch-item {
+            display: inline-block;
+            padding: 10px 15px;
+            margin: 5px;
+            color: white;
+            border-radius: 4px;
+            font-family: monospace;
+            border: 3px solid transparent;
+        }
+        .controls {
+            text-align: center;
+            margin: 20px 0;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            border-radius: 4px;
+            background: #2196F3;
+            color: white;
+        }
+        button:hover { background: #1976D2; }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .explanation {
+            background: #e3f2fd;
+            padding: 15px;
+            border-left: 4px solid #2196F3;
+            margin: 15px 0;
+        }
+        .code {
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            margin: 10px 0;
+        }
+        .info-panel {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin: 15px 0;
+        }
+        .info-box {
+            padding: 10px;
+            background: #f9f9f9;
+            border-radius: 4px;
+            border-left: 3px solid #4CAF50;
+        }
+        svg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+            z-index: -1;
+        }
+        .tree-wrapper {
+            position: relative;
+        }
+        /* Simple tree specific styles */
+        #simpleTreeContainer .node {
+            width: 70px;
+            height: 70px;
+            line-height: normal;
+            display: inline-flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        #simpleTreeContainer .node.active {
+            background: #ff9800;
+            animation: pulse 0.5s;
+        }
+    </style>
+</head>
+<body>
+    <h1>Tree Traversal Kernel Visualization</h1>
+
+    <div class="container">
+        <h2>Problem Overview</h2>
+        <div class="explanation">
+            <strong>Core Purpose:</strong> Optimize parallel tree traversal on a custom VLIW SIMD processor.
+            <br><br>
+            Each batch item carries a <strong>value</strong> and traverses a binary tree:
+            <ol>
+                <li>At each node: <code>value = hash(value ^ node_value)</code></li>
+                <li>Go <strong>left</strong> if value is even, <strong>right</strong> if odd</li>
+                <li>Wrap to root when reaching the bottom</li>
+                <li>Repeat for multiple rounds</li>
+            </ol>
+        </div>
+
+        <h2>Hash Calculator</h2>
+        <div style="background: #f9f9f9; padding: 15px; border-radius: 4px;">
+            <div style="margin-bottom: 15px;">
+                <label for="hashInput" style="display: block; margin-bottom: 5px; font-weight: bold;">Input Value:</label>
+                <input type="number" id="hashInput" value="110" style="padding: 8px; width: 200px; font-size: 14px; border: 1px solid #ccc; border-radius: 4px;">
+                <button onclick="calculateHash()" style="margin-left: 10px;">Calculate Hash</button>
+            </div>
+
+            <div id="hashStages" style="font-family: monospace; font-size: 12px; background: white; padding: 15px; border-radius: 4px; line-height: 1.8;"></div>
+
+            <div id="hashResult" style="margin-top: 15px; padding: 15px; background: #e8f5e9; border-radius: 4px; font-weight: bold;"></div>
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>Binary Tree (Height = 2)</h2>
+        <div class="explanation" style="font-size: 14px; padding: 10px;">
+            <strong>Color-coded batch items:</strong> Each batch item has a unique color. Small colored circles below nodes show which batch items are currently at that position. Tree values are randomly generated on each reset.
+            <div style="margin-top: 10px; display: flex; gap: 15px; flex-wrap: wrap;">
+                <span style="display: inline-flex; align-items: center; gap: 5px;">
+                    <div style="width: 20px; height: 20px; border-radius: 50%; background: #2196F3; border: 2px solid white;"></div>
+                    <span>Item 0</span>
+                </span>
+                <span style="display: inline-flex; align-items: center; gap: 5px;">
+                    <div style="width: 20px; height: 20px; border-radius: 50%; background: #E91E63; border: 2px solid white;"></div>
+                    <span>Item 1</span>
+                </span>
+                <span style="display: inline-flex; align-items: center; gap: 5px;">
+                    <div style="width: 20px; height: 20px; border-radius: 50%; background: #9C27B0; border: 2px solid white;"></div>
+                    <span>Item 2</span>
+                </span>
+                <span style="display: inline-flex; align-items: center; gap: 5px;">
+                    <div style="width: 20px; height: 20px; border-radius: 50%; background: #FF9800; border: 2px solid white;"></div>
+                    <span>Item 3</span>
+                </span>
+            </div>
+        </div>
+        <div class="tree-wrapper">
+            <svg id="treeSvg" width="100%" height="200"></svg>
+            <div class="tree-container" id="treeContainer"></div>
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>Input State (Complete View)</h2>
+        <div style="background: #f9f9f9; padding: 15px; border-radius: 4px; font-family: monospace; font-size: 13px;">
+            <div style="margin-bottom: 10px;">
+                <strong>rounds:</strong> <span id="inputRounds">3</span>
+            </div>
+            <div style="margin-bottom: 10px;">
+                <strong>indices[]:</strong> <span id="inputIndices">[0, 0, 0, 0]</span>
+            </div>
+            <div>
+                <strong>values[]:</strong> <span id="inputValues">[-, -, -, -]</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>Batch Items</h2>
+        <div id="batchContainer" style="text-align: center;"></div>
+    </div>
+
+    <div class="container">
+        <div class="controls">
+            <button onclick="stepOnce()">Step Once</button>
+            <button onclick="stepRound()">Complete Round</button>
+            <button onclick="reset()">Reset</button>
+        </div>
+
+        <div class="info-panel">
+            <div class="info-box">
+                <strong>Current Round:</strong> <span id="roundInfo">0 / 3</span>
+            </div>
+            <div class="info-box">
+                <strong>Current Step:</strong> <span id="stepInfo">0 / 4</span>
+            </div>
+        </div>
+
+        <div id="operationLog" style="margin-top: 15px; padding: 10px; background: #f9f9f9; border-radius: 4px; max-height: 200px; overflow-y: auto; font-family: monospace; font-size: 12px;"></div>
+    </div>
+
+    <div class="container">
+        <h2>Simple Example: Fixed Tree (Nodes 0-6)</h2>
+
+        <div class="info-panel">
+            <div class="info-box">
+                <strong>Tree Values:</strong><br>
+                <span style="font-family: monospace;">[10, 20, 30, 40, 50, 60, 70]</span><br>
+                <small>Index 0-6 in binary tree structure</small>
+            </div>
+            <div class="info-box">
+                <strong>Initial Input:</strong><br>
+                <span style="font-family: monospace;">index = <span id="displayStartIdx">0</span>, value = <span id="displayStartVal">100</span></span>
+            </div>
+        </div>
+
+        <div style="background: #f9f9f9; padding: 15px; border-radius: 4px; margin: 15px 0;">
+            <h3 style="margin-top: 0; font-size: 1.1em;">Try Different Inputs</h3>
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                <div>
+                    <label for="simpleStartIdx" style="display: block; margin-bottom: 5px;">Start Index (0-6):</label>
+                    <input type="number" id="simpleStartIdx" value="0" min="0" max="6" style="padding: 8px; width: 100%; border: 1px solid #ccc; border-radius: 4px;">
+                </div>
+                <div>
+                    <label for="simpleStartVal" style="display: block; margin-bottom: 5px;">Start Value:</label>
+                    <input type="number" id="simpleStartVal" value="100" min="0" style="padding: 8px; width: 100%; border: 1px solid #ccc; border-radius: 4px;">
+                </div>
+                <div style="display: flex; align-items: flex-end;">
+                    <button onclick="setSimpleInput()" style="width: 100%;">Set New Input</button>
+                </div>
+            </div>
+            <div style="font-size: 12px; color: #666;">
+                Test how different starting values traverse the same tree structure
+            </div>
+        </div>
+
+        <div class="tree-wrapper">
+            <div class="tree-container" id="simpleTreeContainer"></div>
+        </div>
+
+        <div class="controls">
+            <button onclick="stepSimple()">Step Once</button>
+            <button onclick="stepSimple(5)">Step 5 Times</button>
+            <button onclick="resetSimple()">Reset to Initial</button>
+        </div>
+
+        <div class="info-box" style="margin-top: 15px;">
+            <strong>Current State:</strong> <span id="simpleStatus">Ready</span>
+        </div>
+
+        <div id="simpleLog" style="margin-top: 15px; padding: 10px; background: #f9f9f9; border-radius: 4px; max-height: 250px; overflow-y: auto; font-family: monospace; font-size: 12px;"></div>
+    </div>
+
+    <div class="container">
+        <h2>Key Optimization Challenges</h2>
+        <div class="explanation">
+            <ul>
+                <li><strong>Vectorization:</strong> Process 8 batch items simultaneously using VALU instructions</li>
+                <li><strong>Memory Access:</strong> Tree values are in slow memory - minimize loads</li>
+                <li><strong>Hash Function:</strong> 6 stages of XOR/ADD/SHIFT operations to optimize</li>
+                <li><strong>Control Flow:</strong> Divergent branches (different items go different directions)</li>
+                <li><strong>Parallelism:</strong> Use multiple engine slots per cycle (12 ALU, 6 VALU, 2 load, 2 store)</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        // Hash function constants (from problem.py)
+        const HASH_STAGES = [
+            ["+", 0x7ED55D16, "+", "<<", 12],
+            ["^", 0xC761C23C, "^", ">>", 19],
+            ["+", 0x165667B1, "+", "<<", 5],
+            ["+", 0xD3A2646C, "^", "<<", 9],
+            ["+", 0xFD7046C5, "+", "<<", 3],
+            ["^", 0xB55A4F09, "^", ">>", 16],
+        ];
+
+        function mod32(x) {
+            return x >>> 0; // Convert to unsigned 32-bit
+        }
+
+        function applyOp(op, a, b) {
+            switch(op) {
+                case "+": return (a + b) >>> 0;
+                case "^": return (a ^ b) >>> 0;
+                case "<<": return (a << b) >>> 0;
+                case ">>": return (a >>> b);
+                default: return a;
+            }
+        }
+
+        // Colors for each batch item
+        const BATCH_COLORS = [
+            '#2196F3',  // Blue - Item 0
+            '#E91E63',  // Pink - Item 1
+            '#9C27B0',  // Purple - Item 2
+            '#FF9800',  // Orange - Item 3
+        ];
+
+        const HEIGHT = 2;
+        const TREE_SIZE = (1 << (HEIGHT + 1)) - 1; // 2^(h+1) - 1
+        const BATCH_SIZE = 4;
+        const ROUNDS = 3;
+
+        let tree = [];
+        let batch = [];
+        let currentRound = 0;
+        let currentStep = 0;
+        let log = [];
+
+        function simpleHash(x) {
+            // Actual hash implementation matching problem.py
+            let a = mod32(x);
+            HASH_STAGES.forEach(stage => {
+                const [op1, val1, op2, op3, val3] = stage;
+                const step1 = applyOp(op1, a, val1);
+                const step2 = applyOp(op3, a, val3);
+                a = applyOp(op2, step1, step2);
+            });
+            return a;
+        }
+
+        function initTree() {
+            tree = [];
+            for (let i = 0; i < TREE_SIZE; i++) {
+                tree.push(Math.floor(Math.random() * 1000));
+            }
+        }
+
+        function initBatch() {
+            batch = [];
+            for (let i = 0; i < BATCH_SIZE; i++) {
+                batch.push({
+                    id: i,
+                    index: 0,
+                    value: Math.floor(Math.random() * 1000)
+                });
+            }
+        }
+
+        function reset() {
+            initTree();
+            initBatch();
+            currentRound = 0;
+            currentStep = 0;
+            log = [];
+            render();
+
+            const indices = batch.map(b => b.index);
+            const values = batch.map(b => b.value);
+            addLog("=== Reset - New Session ===");
+            addLog(`Initial state:`);
+            addLog(`  rounds = ${ROUNDS}`);
+            addLog(`  indices = [${indices.join(', ')}]`);
+            addLog(`  values = [${values.join(', ')}]`);
+            addLog(`Ready to start - Click "Step Once" to begin`);
+            addLog('');
+        }
+
+        function stepOnce() {
+            if (currentRound >= ROUNDS) {
+                addLog("All rounds complete!");
+                return;
+            }
+
+            const item = batch[currentStep];
+            const nodeVal = tree[item.index];
+            const oldIdx = item.index;
+            const oldVal = item.value;
+
+            // Perform one step
+            const xorVal = (item.value ^ nodeVal) >>> 0;
+            item.value = simpleHash(xorVal);
+            const nextIdx = 2 * item.index + (item.value % 2 === 0 ? 1 : 2);
+            item.index = nextIdx >= TREE_SIZE ? 0 : nextIdx;
+
+            const wrapped = nextIdx >= TREE_SIZE ? ' (WRAPPED to 0)' : '';
+            addLog(`Round ${currentRound}, Step ${currentStep}: Batch[${item.id}]`);
+            addLog(`  Before: idx=${oldIdx}, val=${oldVal}`);
+            addLog(`  XOR: ${oldVal} ^ node[${oldIdx}](${nodeVal}) = ${xorVal}`);
+            addLog(`  Hash: ${xorVal} -> ${item.value} (${item.value % 2 === 0 ? 'EVEN' : 'ODD'})`);
+            addLog(`  Direction: ${item.value % 2 === 0 ? 'LEFT' : 'RIGHT'}, next_idx = 2*${oldIdx}+${item.value % 2 === 0 ? '1' : '2'} = ${nextIdx}${wrapped}`);
+            addLog(`  After: idx=${item.index}, val=${item.value}`);
+
+            currentStep++;
+            if (currentStep >= BATCH_SIZE) {
+                currentStep = 0;
+                currentRound++;
+
+                // Show full state after round
+                const indices = batch.map(b => b.index);
+                const values = batch.map(b => b.value);
+                addLog(`--- Round ${currentRound - 1} complete ---`);
+                addLog(`State: indices=[${indices.join(', ')}], values=[${values.join(', ')}]`);
+                addLog('');
+
+                if (currentRound >= ROUNDS) {
+                    addLog("=== All rounds complete ===");
+                }
+            }
+
+            render();
+        }
+
+        function stepRound() {
+            for (let i = 0; i < BATCH_SIZE; i++) {
+                stepOnce();
+            }
+        }
+
+        function addLog(msg) {
+            log.push(msg);
+            if (log.length > 50) log.shift();
+            document.getElementById('operationLog').innerHTML = log.slice().reverse().join('<br>');
+        }
+
+        function drawTree() {
+            const container = document.getElementById('treeContainer');
+            container.innerHTML = '';
+
+            const levels = [];
+            for (let h = 0; h <= HEIGHT; h++) {
+                levels[h] = [];
+            }
+
+            // Assign nodes to levels
+            for (let i = 0; i < TREE_SIZE; i++) {
+                const level = Math.floor(Math.log2(i + 1));
+                levels[level].push(i);
+            }
+
+            // Draw levels
+            for (let h = 0; h <= HEIGHT; h++) {
+                const levelDiv = document.createElement('div');
+                levelDiv.className = 'level';
+
+                levels[h].forEach(idx => {
+                    const node = document.createElement('div');
+                    node.className = 'node';
+                    node.id = `node-${idx}`;
+                    node.textContent = tree[idx];
+
+                    // Find which batch items are at this node
+                    const itemsAtNode = batch.filter(item => item.index === idx);
+                    const itemNames = itemsAtNode.map(item => `Item ${item.id}`).join(', ');
+                    node.title = `Index: ${idx}, Value: ${tree[idx]}${itemsAtNode.length > 0 ? `\nBatch items: ${itemNames}` : ''}`;
+
+                    // Create indicators for each batch item at this node
+                    if (itemsAtNode.length > 0) {
+                        const indicatorsDiv = document.createElement('div');
+                        indicatorsDiv.className = 'node-indicators';
+
+                        itemsAtNode.forEach(item => {
+                            const indicator = document.createElement('div');
+                            indicator.className = 'node-indicator';
+                            indicator.style.backgroundColor = BATCH_COLORS[item.id];
+                            indicator.textContent = item.id;
+                            indicator.title = `Batch Item ${item.id}`;
+                            indicatorsDiv.appendChild(indicator);
+                        });
+
+                        node.appendChild(indicatorsDiv);
+                    }
+
+                    levelDiv.appendChild(node);
+                });
+
+                container.appendChild(levelDiv);
+            }
+        }
+
+        function drawBatch() {
+            const container = document.getElementById('batchContainer');
+            container.innerHTML = '';
+
+            batch.forEach((item, i) => {
+                const div = document.createElement('div');
+                div.className = 'batch-item';
+
+                // Use the batch item's color
+                div.style.backgroundColor = BATCH_COLORS[item.id];
+
+                // Add active styling
+                if (i === currentStep && currentRound < ROUNDS) {
+                    div.style.border = '3px solid #fff';
+                    div.style.boxShadow = '0 0 10px rgba(0,0,0,0.5)';
+                    div.innerHTML = `<strong>Item ${item.id}</strong> (ACTIVE)<br>idx=${item.index}<br>val=${item.value}`;
+                } else {
+                    div.innerHTML = `<strong>Item ${item.id}</strong><br>idx=${item.index}<br>val=${item.value}`;
+                }
+                container.appendChild(div);
+            });
+        }
+
+        function updateInfo() {
+            document.getElementById('roundInfo').textContent = `${currentRound} / ${ROUNDS}`;
+            document.getElementById('stepInfo').textContent = `${currentStep} / ${BATCH_SIZE}`;
+            updateInputState();
+        }
+
+        function updateInputState() {
+            // Display the complete input state
+            document.getElementById('inputRounds').textContent = ROUNDS;
+
+            const indices = batch.map(item => item.index);
+            document.getElementById('inputIndices').textContent = `[${indices.join(', ')}]`;
+
+            const values = batch.map(item => item.value);
+            document.getElementById('inputValues').textContent = `[${values.join(', ')}]`;
+        }
+
+        function render() {
+            drawTree();
+            drawBatch();
+            updateInfo();
+        }
+
+        // ============ Hash Calculator ============
+        function calculateHash() {
+            const input = parseInt(document.getElementById('hashInput').value) || 0;
+            let a = mod32(input);
+            let stagesHTML = `<strong>Input:</strong> ${input} (0x${input.toString(16).toUpperCase()})<br><br>`;
+
+            HASH_STAGES.forEach((stage, i) => {
+                const [op1, val1, op2, op3, val3] = stage;
+                const oldA = a;
+
+                // Step 1: op1(a, val1)
+                const step1 = applyOp(op1, a, val1);
+                // Step 2: op3(a, val3)
+                const step2 = applyOp(op3, a, val3);
+                // Step 3: op2(step1, step2)
+                a = applyOp(op2, step1, step2);
+
+                stagesHTML += `<strong>Stage ${i}:</strong><br>`;
+                stagesHTML += `  a = ${oldA} (0x${oldA.toString(16).toUpperCase().padStart(8, '0')})<br>`;
+                stagesHTML += `  step1 = ${oldA} ${op1} 0x${val1.toString(16).toUpperCase()} = ${step1}<br>`;
+                stagesHTML += `  step2 = ${oldA} ${op3} ${val3} = ${step2}<br>`;
+                stagesHTML += `  a = step1 ${op2} step2 = ${step1} ${op2} ${step2} = ${a}<br>`;
+                stagesHTML += `  → a = ${a} (0x${a.toString(16).toUpperCase().padStart(8, '0')})<br><br>`;
+            });
+
+            document.getElementById('hashStages').innerHTML = stagesHTML;
+
+            const isEven = a % 2 === 0;
+            const resultHTML = `
+                <div>Final Hash Result: ${a} (0x${a.toString(16).toUpperCase().padStart(8, '0')})</div>
+                <div>Parity: ${isEven ? 'EVEN' : 'ODD'} → Go ${isEven ? 'LEFT' : 'RIGHT'} (next_idx = 2*idx + ${isEven ? '1' : '2'})</div>
+            `;
+            document.getElementById('hashResult').innerHTML = resultHTML;
+        }
+
+        // Calculate initial value on load
+        calculateHash();
+
+        // Initialize on load
+        reset();
+
+        // ============ Simple Example Section ============
+        // Fixed tree with nodes 0-6, values [10, 20, 30, 40, 50, 60, 70]
+        const SIMPLE_TREE = [10, 20, 30, 40, 50, 60, 70];
+        const SIMPLE_TREE_SIZE = 7;
+        let simpleInitial = {
+            index: 0,
+            value: 100
+        };
+        let simpleState = {
+            index: 0,
+            value: 100,
+            step: 0
+        };
+        let simpleLogEntries = [];
+
+        function setSimpleInput() {
+            const newIdx = parseInt(document.getElementById('simpleStartIdx').value);
+            const newVal = parseInt(document.getElementById('simpleStartVal').value);
+
+            if (newIdx < 0 || newIdx >= SIMPLE_TREE_SIZE) {
+                alert(`Index must be between 0 and ${SIMPLE_TREE_SIZE - 1}`);
+                return;
+            }
+            if (isNaN(newVal) || newVal < 0) {
+                alert('Value must be a non-negative number');
+                return;
+            }
+
+            simpleInitial.index = newIdx;
+            simpleInitial.value = newVal;
+
+            document.getElementById('displayStartIdx').textContent = newIdx;
+            document.getElementById('displayStartVal').textContent = newVal;
+
+            resetSimple();
+            addSimpleLog(`New input set: idx=${newIdx}, val=${newVal}`);
+        }
+
+        function resetSimple() {
+            simpleState = {
+                index: simpleInitial.index,
+                value: simpleInitial.value,
+                step: 0
+            };
+            simpleLogEntries = [];
+            addSimpleLog(`Reset - Starting at node ${simpleInitial.index}, value = ${simpleInitial.value}`);
+            renderSimpleTree();
+            document.getElementById('simpleStatus').textContent = `Step 0: idx=${simpleState.index}, val=${simpleState.value}`;
+        }
+
+        function stepSimple(count = 1) {
+            for (let i = 0; i < count; i++) {
+            const oldIdx = simpleState.index;
+            const oldVal = simpleState.value;
+            const nodeVal = SIMPLE_TREE[simpleState.index];
+
+            // XOR with node value
+            const xorVal = (simpleState.value ^ nodeVal) >>> 0;
+
+            // Apply hash
+            const hashedVal = simpleHash(xorVal);
+            simpleState.value = hashedVal;
+
+            // Determine direction: even = left (2*i+1), odd = right (2*i+2)
+            const isEven = hashedVal % 2 === 0;
+            const direction = isEven ? "LEFT" : "RIGHT";
+            const nextIdx = 2 * simpleState.index + (isEven ? 1 : 2);
+
+            // Wrap if necessary
+            const wrappedIdx = nextIdx >= SIMPLE_TREE_SIZE ? 0 : nextIdx;
+            const wrapped = nextIdx >= SIMPLE_TREE_SIZE ? " (WRAPPED)" : "";
+
+            simpleState.index = wrappedIdx;
+            simpleState.step++;
+
+            // Log the step
+            const logMsg = `Step ${simpleState.step - 1}: idx=${oldIdx}, val=${oldVal}, node[${oldIdx}]=${nodeVal}
+  → XOR: ${oldVal} ^ ${nodeVal} = ${xorVal}
+  → hash(${xorVal}) = ${hashedVal} (${isEven ? 'EVEN' : 'ODD'})
+  → Go ${direction}: next_idx = 2*${oldIdx}+${isEven ? 1 : 2} = ${nextIdx}${wrapped}
+  → New state: idx=${wrappedIdx}, val=${hashedVal}`;
+
+            addSimpleLog(logMsg);
+            renderSimpleTree();
+            document.getElementById('simpleStatus').textContent =
+                `Step ${simpleState.step}: idx=${simpleState.index}, val=${simpleState.value}`;
+            }
+        }
+
+        function addSimpleLog(msg) {
+            simpleLogEntries.push(msg);
+            if (simpleLogEntries.length > 20) simpleLogEntries.shift();
+            document.getElementById('simpleLog').innerHTML =
+                simpleLogEntries.slice().reverse().join('<br><br>').replace(/\n/g, '<br>');
+        }
+
+        function renderSimpleTree() {
+            const container = document.getElementById('simpleTreeContainer');
+            container.innerHTML = '';
+
+            // Create tree structure: height 2, nodes 0-6
+            //      0
+            //    /   \
+            //   1     2
+            //  / \   / \
+            // 3   4 5   6
+
+            const levels = [
+                [0],           // Level 0: root
+                [1, 2],        // Level 1
+                [3, 4, 5, 6]   // Level 2
+            ];
+
+            levels.forEach((nodeIndices, level) => {
+                const levelDiv = document.createElement('div');
+                levelDiv.className = 'level';
+
+                nodeIndices.forEach(idx => {
+                    const node = document.createElement('div');
+                    node.className = 'node';
+                    node.id = `simple-node-${idx}`;
+
+                    // Show both index and value
+                    node.innerHTML = `<div style="font-size: 10px; color: #fff;">idx:${idx}</div><div style="font-size: 14px; font-weight: bold;">${SIMPLE_TREE[idx]}</div>`;
+
+                    // Add indicator if this is the current position
+                    if (simpleState.index === idx) {
+                        const indicator = document.createElement('div');
+                        indicator.className = 'node-indicators';
+                        const badge = document.createElement('div');
+                        badge.className = 'node-indicator';
+                        badge.style.backgroundColor = '#FFD700';
+                        badge.textContent = '●';
+                        badge.title = 'Current Position';
+                        indicator.appendChild(badge);
+                        node.appendChild(indicator);
+                        node.title = `Index: ${idx}, Value: ${SIMPLE_TREE[idx]} - CURRENT POSITION`;
+                    } else {
+                        node.title = `Index: ${idx}, Value: ${SIMPLE_TREE[idx]}`;
+                    }
+
+                    levelDiv.appendChild(node);
+                });
+
+                container.appendChild(levelDiv);
+            });
+        }
+
+        // Initialize simple example
+        resetSimple();
+    </script>
+</body>
+</html>
